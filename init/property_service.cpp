@@ -31,6 +31,7 @@
 #include <sys/mman.h>
 #include <sys/poll.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <sys/system_properties.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -1151,6 +1152,20 @@ static void property_initialize_ro_vendor_api_level() {
     }
 }
 
+// /cache is mounted in first-stage init; persist.* properties are not available yet.
+static bool ShouldHideRomAtBoot() {
+    unique_fd fd(open("/cache/spoofing/rom_hide", O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+    if (fd < 0) return true;
+
+    struct stat st;
+    if (fstat(fd.get(), &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != AID_SYSTEM ||
+        (st.st_mode & (S_IWGRP | S_IWOTH)) != 0 || st.st_size != 1) {
+        return true;
+    }
+    char value;
+    return TEMP_FAILURE_RETRY(read(fd.get(), &value, 1)) != 1 || value != '0';
+}
+
 static void SetSafetyNetProps() {
     std::string error;
     uint32_t res;
@@ -1309,14 +1324,9 @@ void PropertyLoadBootDefaults() {
     property_initialize_ro_cpu_abilist();
     property_initialize_ro_vendor_api_level();
 
-    // Report a valid verified boot chain to make Google SafetyNet integrity
-    // checks pass. This needs to be done before parsing the kernel cmdline as
-    // these properties are read-only and will be set to invalid values with
-    // androidboot cmdline arguments.
-    if (SPOOF_SAFETYNET) {
-      if (!IsRecoveryMode()) {
+    // Apply startup overrides only when the persisted ROM hiding choice is enabled.
+    if (SPOOF_SAFETYNET && !IsRecoveryMode() && ShouldHideRomAtBoot()) {
         SetSafetyNetProps();
-      }
     }
 
     // Restore the normal property override security after init extension is executed

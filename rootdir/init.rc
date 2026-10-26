@@ -612,6 +612,9 @@ on post-fs
     # permissions if created by the recovery system.
     mkdir /cache/recovery 0770 system cache
 
+    # Persist the active user's ROM hiding choice for first-stage mounted cache.
+    mkdir /cache/spoofing 0700 system system
+
     # Backup/restore mechanism uses the cache partition
     mkdir /cache/backup_stage 0700 system system
     mkdir /cache/backup 0700 system system
